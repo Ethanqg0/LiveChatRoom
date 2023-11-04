@@ -4,14 +4,16 @@
     This module contains the main flask application
     and socketio instance.
 
-    Functions:
-        home: renders home.html
+    Notes:
+        Chat room closing: if the last person leaves the room, the room is deleted and the user is sent back to the home page
+        Chat room closing: if there are more than two people in the room, the room will not be deleted and refreshing your page will not send you back to the home page subsequently
+        Chat room closing: not determined by hosts leaving, but by the number of people occupying
 """
 
+from flask import Flask, render_template, request, session, redirect, url_for
+from flask_socketio import join_room, leave_room, send, SocketIO
 import random
 from string import ascii_uppercase
-from flask import Flask, render_template, request, session, redirect, url_for
-from flask_socketio import SocketIO, join_room, leave_room, send
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "generatelater"
@@ -30,7 +32,7 @@ def generate_unique_code(length):
 
     return code
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/", methods=["POST", "GET"])
 def home():
     session.clear()
     if request.method == "POST":
@@ -38,21 +40,20 @@ def home():
         code = request.form.get("code")
         join = request.form.get("join", False)
         create = request.form.get("create", False)
-        
-        if not name: # if name is empty
-            return render_template("home.html", error="Please enter a name.", code=code, name=name) #passing an error variable that will be accessed in html page
-        if join and not code: # If they attempt to join a room without a code (problem)
-            return render_template("home.html", error="Please enter a code to join a room.", code=code, name=name)
+
+        if not name:
+            return render_template("home.html", error="Please enter a name.", code=code, name=name)
+
+        if join != False and not code:
+            return render_template("home.html", error="Please enter a room code.", code=code, name=name)
         
         room = code
-        if create != False: # if they are creating a room
+        if create != False:
             room = generate_unique_code(4)
             rooms[room] = {"members": 0, "messages": []}
-        elif code not in rooms: # if they are joining a room that doesn't exist
-            return render_template("home.html", error=f"Room {code} does not exist.", code=code, name=name)
-
-        # temporary data storage. we want to keep track of the room and name
-        # stores data between refreshes
+        elif code not in rooms:
+            return render_template("home.html", error="Room does not exist.", code=code, name=name)
+        
         session["room"] = room
         session["name"] = name
         return redirect(url_for("room"))
@@ -64,11 +65,51 @@ def room():
     room = session.get("room")
     if room is None or session.get("name") is None or room not in rooms:
         return redirect(url_for("home"))
+
+    return render_template("room.html", code=room, messages=rooms[room]["messages"])
+
+@socketio.on("message")
+def message(data):
+    room = session.get("room")
+    if room not in rooms:
+        return 
     
-    return render_template("room.html")
+    content = {
+        "name": session.get("name"),
+        "message": data["data"]
+    }
+    send(content, to=room)
+    rooms[room]["messages"].append(content)
+    print(f"{session.get('name')} said: {data['data']}")
 
 @socketio.on("connect")
-def connect(auth): # auth is used for authentication but is not currently used
+def connect(auth):
+    room = session.get("room")
+    name = session.get("name")
+    if not room or not name:
+        return
+    if room not in rooms:
+        leave_room(room)
+        return
+    
+    join_room(room)
+    send({"name": name, "message": "has entered the room"}, to=room)
+    rooms[room]["members"] += 1
+    print(f"{name} joined room {room}")
+
+@socketio.on("disconnect")
+def disconnect():
+    room = session.get("room")
+    name = session.get("name")
+    leave_room(room)
+
+    if room in rooms:
+        rooms[room]["members"] -= 1
+        if rooms[room]["members"] <= 0:
+            del rooms[room]
+    
+    send({"name": name, "message": "has left the room"}, to=room)
+    print(f"{name} has left the room {room}")
 
 
 if __name__ == "__main__":
