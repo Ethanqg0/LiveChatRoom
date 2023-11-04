@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<form method="post"> /* when you submit your form it will send a post request */
+    <h3>Enter the Chat Room</h3>
+    <div>
+        <label>Name:</label>
+        <input type="text" placeholder="Pick a name!" name="name" required>
+    </div>
+</form>
+{% endblock %}
