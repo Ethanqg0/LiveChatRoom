@@ -18,6 +18,7 @@ import random
 from string import ascii_uppercase
 from flask import Flask, render_template, request, session, redirect, url_for
 from flask_socketio import join_room, leave_room, send, SocketIO
+from auth import db, User, Message, Conversation
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "generatelater"
@@ -115,6 +116,7 @@ def room():
 
     return render_template("room.html", code=room, messages=rooms[room]["messages"])
 
+# can be replaced with sockeio.on("json")
 @socketio.on("message")
 def message(data):
     """
@@ -193,6 +195,35 @@ def disconnect():
 
     send({"name": name, "message": "has left the room"}, to=room)
     print(f"{name} has left the room {room}")
+
+@socketio.on("ping")
+def ping():
+    """
+    Handle ping requests.
+
+    This function is an event handler for ping requests. It responds to the ping request
+    with a pong response.
+
+    Note:
+        The pong response is sent to the user who sent the ping request.
+    """
+    send({"message": "pong"})
+
+@socketio.on("error")
+def error(data):
+    """
+    Handle error messages.
+
+    This function is an event handler for error messages. It logs the error message.
+
+    Args:
+        data (dict): A dictionary containing the error message data with a 'data' key.
+
+    Note:
+        The error message is logged.
+    """
+    print(f"Error: {data['data']}")
+
 
 
 if __name__ == "__main__":
